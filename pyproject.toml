@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "music-cleanup"
-version = "0.1.5"
+version = "0.1.6"
 description = "Windows-first MP3 auto-tagger and organizer"
 readme = "README.md"
 requires-python = ">=3.11"

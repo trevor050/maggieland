@@ -47,6 +47,7 @@
 - In `move` mode, unresolved/error files should be copied (not moved) so source files are never lost on failed fingerprinting.
 - In `move` mode, require `output_dir` to be outside `input_dir` to avoid recursive or confusing file movement.
 - AcoustID API non-`ok` responses must be treated as hard errors (with API message), not unresolved items, or bad keys/rate-limits get silently masked.
+- Add explicit AcoustID key/API preflight before batch scan to prove connectivity/auth at startup and avoid wasting full runs.
 - Filename collisions must be deterministic (`(1)`, `(2)`, ...).
 - Windows path sanitization and reserved characters must be enforced.
 - CLI entrypoint can be launched as a script on Windows in some bundles; avoid package-relative imports in `cli.py` to prevent `ImportError: attempted relative import with no known parent package`.
@@ -66,3 +67,4 @@
 - 2026-03-05: Hardened config parsing with YAML path hints + robust boolean coercion; improved runtime `.bat` Python detection (`python`/`py`) and dependency install failure messaging.
 - 2026-03-05: Added move-mode safety guards: copy unresolved/error files instead of moving, and reject nested output directories in move mode.
 - 2026-03-05: Fixed silent AcoustID API failure handling by surfacing non-`ok` responses as `Fingerprint error` items; unresolved entries now include a confidence-threshold hint for manual tuning.
+- 2026-03-05: Added startup AcoustID preflight check + console confirmation (`AcoustID preflight: OK`); invalid keys now fail immediately with clear remediation.

@@ -11,7 +11,12 @@ from pathlib import Path
 
 from music_cleanup.config import AppConfig, load_config
 from music_cleanup.decision import is_confident_match, should_skip_existing
-from music_cleanup.metadata import FingerprintError, configure_rate_limits, identify_track
+from music_cleanup.metadata import (
+    FingerprintError,
+    configure_rate_limits,
+    identify_track,
+    validate_acoustid_api_key,
+)
 from music_cleanup.models import FileInfo, FileResult, MatchMetadata
 from music_cleanup.organizer import ensure_dir, transfer_file
 from music_cleanup.reporting import write_report, write_review_csv, write_summary
@@ -51,6 +56,8 @@ def main(argv: list[str] | None = None) -> int:
             acoustid_rps=cfg.acoustid_requests_per_second,
             musicbrainz_rps=cfg.musicbrainz_requests_per_second,
         )
+        validate_acoustid_api_key(cfg.acoustid_api_key)
+        print("AcoustID preflight: OK")
 
         results = run_pipeline(cfg, dry_run=args.dry_run, resume=args.resume)
         elapsed = time.perf_counter() - start
@@ -181,7 +188,6 @@ def classify_file(file_info: FileInfo, cfg: AppConfig) -> FileResult:
         match = identify_track(
             mp3_path=file_info.source_path,
             api_key=cfg.acoustid_api_key,
-            confidence_threshold=cfg.confidence_threshold,
             fpcalc_path=cfg.fpcalc_path,
         )
 

@@ -10,7 +10,12 @@ import musicbrainzngs
 
 from .models import MatchMetadata
 
-musicbrainzngs.set_useragent("music-cleanup", "0.1.5", "https://example.invalid")
+acoustid.set_base_url("https://api.acoustid.org/v2/")
+musicbrainzngs.set_useragent("music-cleanup", "0.1.6", "https://example.invalid")
+musicbrainzngs.set_rate_limit(limit_or_interval=1.0, new_requests=1)
+musicbrainzngs.set_hostname("musicbrainz.org")
+
+API_TIMEOUT_SECONDS = 20
 
 
 class FingerprintError(RuntimeError):
@@ -55,10 +60,31 @@ def configure_rate_limits(acoustid_rps: float, musicbrainz_rps: float) -> None:
     _musicbrainz_limiter = RateLimiter(musicbrainz_rps)
 
 
+def validate_acoustid_api_key(api_key: str) -> None:
+    """Fail fast for invalid AcoustID credentials before scanning files."""
+    try:
+        response = acoustid.lookup(api_key, "AQAA", 1, meta=[], timeout=API_TIMEOUT_SECONDS)
+    except Exception as exc:
+        raise FingerprintError(f"AcoustID API preflight failed: {exc}") from exc
+
+    if not isinstance(response, dict):
+        raise FingerprintError("AcoustID API preflight returned an unexpected response")
+
+    if response.get("status") == "error":
+        error_payload = response.get("error")
+        if isinstance(error_payload, dict):
+            code = error_payload.get("code")
+            message = str(error_payload.get("message") or "unknown AcoustID error")
+            if code == 4 and "invalid api key" in message.lower():
+                raise FingerprintError(
+                    "AcoustID API key is invalid. Generate a new key at https://acoustid.org/api-key "
+                    "and update acoustid_api_key in cleanup.config.yml."
+                )
+
+
 def identify_track(
     mp3_path: Path,
     api_key: str,
-    confidence_threshold: float,
     fpcalc_path: str | None,
 ) -> MatchMetadata | None:
     if fpcalc_path:
@@ -66,7 +92,12 @@ def identify_track(
 
     try:
         _acoustid_limiter.acquire()
-        matches = acoustid.match(api_key, str(mp3_path), parse=False)
+        matches = acoustid.match(
+            api_key,
+            str(mp3_path),
+            parse=False,
+            timeout=API_TIMEOUT_SECONDS,
+        )
     except Exception as exc:
         message = str(exc).strip() or exc.__class__.__name__
         lower_message = message.lower()
@@ -93,8 +124,6 @@ def identify_track(
         return None
 
     score, recording_id, title_hint, artist_hint = best
-    if score < confidence_threshold:
-        return None
 
     return enrich_metadata(
         recording_id=recording_id,
