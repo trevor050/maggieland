@@ -43,6 +43,7 @@
 - `fpcalc` dependency is external; if missing, recognition fails. Keep message explicit in errors.
 - Filename collisions must be deterministic (`(1)`, `(2)`, ...).
 - Windows path sanitization and reserved characters must be enforced.
+- CLI entrypoint can be launched as a script on Windows in some bundles; avoid package-relative imports in `cli.py` to prevent `ImportError: attempted relative import with no known parent package`.
 
 ## Future Improvements
 - Optional paid fallback mode (strict budget cap).
@@ -54,3 +55,4 @@
 - 2026-02-19: Initial implementation scaffolded for Windows-first batch workflow, reports, launcher, docs, and packaging pipeline.
 - 2026-02-20: Added thread-safe API rate limiting with configurable RPS for AcoustID and MusicBrainz to keep parallel workers within service limits.
 - 2026-02-25: Final pre-handoff validation completed (tests + CLI smoke check). Created production-only distribution bundle flow that excludes test files.
+- 2026-03-05: Fixed CLI import strategy for cross-invocation compatibility (module and direct script execution), resolving Windows `attempted relative import` startup failures.

@@ -8,14 +8,14 @@ import time
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from pathlib import Path
 
-from .config import AppConfig, load_config
-from .decision import is_confident_match, should_skip_existing
-from .metadata import FingerprintError, configure_rate_limits, identify_track
-from .models import FileInfo, FileResult, MatchMetadata
-from .organizer import ensure_dir, transfer_file
-from .reporting import write_report, write_review_csv, write_summary
-from .scanner import scan_mp3_files
-from .tagger import build_song_filename, sanitize_component, write_tags
+from music_cleanup.config import AppConfig, load_config
+from music_cleanup.decision import is_confident_match, should_skip_existing
+from music_cleanup.metadata import FingerprintError, configure_rate_limits, identify_track
+from music_cleanup.models import FileInfo, FileResult, MatchMetadata
+from music_cleanup.organizer import ensure_dir, transfer_file
+from music_cleanup.reporting import write_report, write_review_csv, write_summary
+from music_cleanup.scanner import scan_mp3_files
+from music_cleanup.tagger import build_song_filename, sanitize_component, write_tags
 
 
 def parse_args(argv: list[str]) -> argparse.Namespace:
