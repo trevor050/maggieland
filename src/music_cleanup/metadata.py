@@ -10,7 +10,7 @@ import musicbrainzngs
 
 from .models import MatchMetadata
 
-musicbrainzngs.set_useragent("music-cleanup", "0.1.1", "https://example.invalid")
+musicbrainzngs.set_useragent("music-cleanup", "0.1.2", "https://example.invalid")
 
 
 class FingerprintError(RuntimeError):
@@ -68,7 +68,14 @@ def identify_track(
         _acoustid_limiter.acquire()
         matches = acoustid.match(api_key, str(mp3_path), parse=False)
     except Exception as exc:
-        raise FingerprintError(str(exc)) from exc
+        message = str(exc).strip() or exc.__class__.__name__
+        lower_message = message.lower()
+        if "fpcalc" in lower_message and "not found" in lower_message:
+            message = (
+                f"{message}. Install Chromaprint/fpcalc, add it to PATH, "
+                "or set fpcalc_path in cleanup.config.yml."
+            )
+        raise FingerprintError(message) from exc
 
     if not isinstance(matches, dict) or matches.get("status") != "ok":
         return None

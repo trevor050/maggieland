@@ -3,6 +3,7 @@ from __future__ import annotations
 import argparse
 import csv
 import os
+import shutil
 import sys
 import time
 from concurrent.futures import ThreadPoolExecutor, as_completed
@@ -43,8 +44,8 @@ def main(argv: list[str] | None = None) -> int:
                 raise ValueError("--confidence must be between 0.0 and 1.0")
             cfg.confidence_threshold = args.confidence
 
-        if cfg.fpcalc_path:
-            os.environ["FPCALC"] = cfg.fpcalc_path
+        cfg.fpcalc_path = resolve_fpcalc_path(cfg.fpcalc_path)
+        os.environ["FPCALC"] = cfg.fpcalc_path
 
         configure_rate_limits(
             acoustid_rps=cfg.acoustid_requests_per_second,
@@ -70,6 +71,38 @@ def main(argv: list[str] | None = None) -> int:
     except Exception as exc:
         print(f"Fatal error: {exc}", file=sys.stderr)
         return 2
+
+
+def resolve_fpcalc_path(config_path: str | None) -> str:
+    """Resolve fpcalc location from config, env, PATH, or app directory."""
+    candidate_strings: list[str] = []
+    if config_path:
+        candidate_strings.append(config_path)
+    env_path = os.environ.get("FPCALC")
+    if env_path:
+        candidate_strings.append(env_path)
+
+    script_dir = Path(sys.argv[0]).resolve().parent
+    for name in ("fpcalc", "fpcalc.exe"):
+        which_path = shutil.which(name)
+        if which_path:
+            candidate_strings.append(which_path)
+        candidate_strings.append(str(script_dir / name))
+        candidate_strings.append(str(Path.cwd() / name))
+
+    seen: set[str] = set()
+    for candidate in candidate_strings:
+        normalized = str(Path(candidate).expanduser())
+        if normalized in seen:
+            continue
+        seen.add(normalized)
+        if Path(normalized).is_file():
+            return normalized
+
+    raise RuntimeError(
+        "fpcalc not found. Install Chromaprint/fpcalc and either set fpcalc_path in cleanup.config.yml, "
+        "put fpcalc.exe next to the launcher, or add fpcalc to PATH."
+    )
 
 
 def run_pipeline(cfg: AppConfig, dry_run: bool, resume: bool) -> list[FileResult]:
