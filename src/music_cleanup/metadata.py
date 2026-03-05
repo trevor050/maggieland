@@ -11,7 +11,7 @@ import musicbrainzngs
 from .models import MatchMetadata
 
 acoustid.set_base_url("https://api.acoustid.org/v2/")
-musicbrainzngs.set_useragent("music-cleanup", "0.1.6", "https://example.invalid")
+musicbrainzngs.set_useragent("music-cleanup", "0.1.7", "https://example.invalid")
 musicbrainzngs.set_rate_limit(limit_or_interval=1.0, new_requests=1)
 musicbrainzngs.set_hostname("musicbrainz.org")
 

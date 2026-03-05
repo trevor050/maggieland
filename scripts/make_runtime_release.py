@@ -18,7 +18,7 @@ README = """MUSIC CLEANUP - WINDOWS QUICK START
    https://www.python.org/downloads/windows/
 
 2) Open cleanup.config.yml and fill in:
-   - acoustid_api_key: https://acoustid.org/api-key
+   - acoustid_api_key: https://acoustid.org/my-applications
    - input_dir
    - output_dir
 
@@ -41,7 +41,12 @@ setlocal
 set "SCRIPT_DIR=%~dp0"
 set "CONFIG=%SCRIPT_DIR%cleanup.config.yml"
 set "VENV_DIR=%SCRIPT_DIR%.venv"
+set "LOG_FILE=%SCRIPT_DIR%last-run.log"
 set "PY_CMD="
+
+> "%LOG_FILE%" echo [INFO] music-cleanup launcher started
+>> "%LOG_FILE%" echo [INFO] Script dir: %SCRIPT_DIR%
+echo [INFO] Writing logs to %LOG_FILE%
 
 where python >nul 2>&1
 if not errorlevel 1 (
@@ -54,38 +59,42 @@ if not errorlevel 1 (
 if "%PY_CMD%"=="" (
   echo [ERROR] Python is not installed or not in PATH.
   echo Install Python 3.11+ (winget install -e --id Python.Python.3.11)
+  >> "%LOG_FILE%" echo [ERROR] Python launcher not found
   pause
   exit /b 1
 )
 
 if not exist "%CONFIG%" (
   echo [ERROR] cleanup.config.yml not found.
+  >> "%LOG_FILE%" echo [ERROR] Missing config file: %CONFIG%
   pause
   exit /b 1
 )
 
 if not exist "%VENV_DIR%\Scripts\python.exe" (
   echo Creating virtual environment...
-  %PY_CMD% -m venv "%VENV_DIR%"
+  %PY_CMD% -m venv "%VENV_DIR%" >> "%LOG_FILE%" 2>&1
   if errorlevel 1 (
     echo [ERROR] Failed to create virtual environment.
+    >> "%LOG_FILE%" echo [ERROR] venv creation failed
     pause
     exit /b 1
   )
 )
 
 call "%VENV_DIR%\Scripts\activate.bat"
-python -m pip install --upgrade pip >nul
-python -m pip install -r "%SCRIPT_DIR%requirements-runtime.txt"
+python -m pip install --upgrade pip >> "%LOG_FILE%" 2>&1
+python -m pip install -r "%SCRIPT_DIR%requirements-runtime.txt" >> "%LOG_FILE%" 2>&1
 if errorlevel 1 (
   echo [ERROR] Failed to install runtime dependencies.
   echo Check internet connection and try again.
+  >> "%LOG_FILE%" echo [ERROR] pip install failed
   pause
   exit /b 1
 )
 
 set "PYTHONPATH=%SCRIPT_DIR%src"
-python -m music_cleanup.cli --config "%CONFIG%"
+python -m music_cleanup.cli --config "%CONFIG%" >> "%LOG_FILE%" 2>&1
 set "ERR=%ERRORLEVEL%"
 
 echo.
@@ -94,6 +103,10 @@ if "%ERR%"=="0" (
 ) else (
   echo Completed with errors. Check report.csv and review.csv for details.
 )
+echo [INFO] Exit code: %ERR%
+echo [INFO] Log file: %LOG_FILE%
+echo.
+type "%LOG_FILE%"
 
 echo.
 pause
