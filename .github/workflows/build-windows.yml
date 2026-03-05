@@ -1,0 +1,38 @@
+name: Build Windows Package
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+
+jobs:
+  build:
+    runs-on: windows-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+
+      - name: Build exe
+        run: |
+          pyinstaller --noconfirm --clean --onefile --name music-cleanup --paths src src/music_cleanup/cli.py
+
+      - name: Create handoff zip
+        run: |
+          python scripts/make_handoff_zip.py --exe dist/music-cleanup.exe
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: music-cleanup-windows
+          path: dist/windows_package/music-cleanup-windows.zip

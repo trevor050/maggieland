@@ -1,0 +1,240 @@
+from __future__ import annotations
+
+import argparse
+import csv
+import os
+import sys
+import time
+from concurrent.futures import ThreadPoolExecutor, as_completed
+from pathlib import Path
+
+from .config import AppConfig, load_config
+from .decision import is_confident_match, should_skip_existing
+from .metadata import FingerprintError, configure_rate_limits, identify_track
+from .models import FileInfo, FileResult, MatchMetadata
+from .organizer import ensure_dir, transfer_file
+from .reporting import write_report, write_review_csv, write_summary
+from .scanner import scan_mp3_files
+from .tagger import build_song_filename, sanitize_component, write_tags
+
+
+def parse_args(argv: list[str]) -> argparse.Namespace:
+    parser = argparse.ArgumentParser(description="Batch cleanup MP3 metadata and filenames")
+    parser.add_argument("--config", required=True, type=Path, help="Path to cleanup config yml")
+    parser.add_argument("--dry-run", action="store_true", help="Simulate actions without writing tags/files")
+    parser.add_argument("--resume", action="store_true", help="Skip files already recorded in report.csv")
+    parser.add_argument("--workers", type=int, default=None, help="Override worker count")
+    parser.add_argument(
+        "--confidence", type=float, default=None, help="Override confidence threshold (0.0-1.0)"
+    )
+    return parser.parse_args(argv)
+
+
+def main(argv: list[str] | None = None) -> int:
+    args = parse_args(argv or sys.argv[1:])
+    start = time.perf_counter()
+
+    try:
+        cfg = load_config(args.config)
+        if args.workers is not None:
+            cfg.workers = max(1, args.workers)
+        if args.confidence is not None:
+            if not 0 <= args.confidence <= 1:
+                raise ValueError("--confidence must be between 0.0 and 1.0")
+            cfg.confidence_threshold = args.confidence
+
+        if cfg.fpcalc_path:
+            os.environ["FPCALC"] = cfg.fpcalc_path
+
+        configure_rate_limits(
+            acoustid_rps=cfg.acoustid_requests_per_second,
+            musicbrainz_rps=cfg.musicbrainz_requests_per_second,
+        )
+
+        results = run_pipeline(cfg, dry_run=args.dry_run, resume=args.resume)
+        elapsed = time.perf_counter() - start
+
+        output_dir = cfg.output_dir
+        write_report(output_dir / "report.csv", results)
+        write_review_csv(output_dir / "review.csv", results)
+        write_summary(output_dir / "run-summary.json", results, dry_run=args.dry_run, elapsed_sec=elapsed)
+
+        errors = sum(1 for r in results if r.status == "error")
+        unresolved = sum(1 for r in results if r.status == "unresolved_non_song")
+        matched = sum(1 for r in results if r.status == "matched_song")
+        print(
+            f"Completed: matched={matched}, unresolved={unresolved}, errors={errors}. "
+            f"Reports written to {output_dir}"
+        )
+        return 0 if errors == 0 else 1
+    except Exception as exc:
+        print(f"Fatal error: {exc}", file=sys.stderr)
+        return 2
+
+
+def run_pipeline(cfg: AppConfig, dry_run: bool, resume: bool) -> list[FileResult]:
+    output_dir = cfg.output_dir
+    ensure_dir(output_dir)
+    songs_dir = output_dir / cfg.songs_dir
+    nonsongs_dir = output_dir / cfg.nonsongs_dir
+    ensure_dir(songs_dir)
+    ensure_dir(nonsongs_dir)
+
+    already_done_hashes = load_completed_hashes(output_dir / "report.csv") if resume else set()
+    all_files = scan_mp3_files(cfg.input_dir)
+    queued_files = [f for f in all_files if f.file_hash not in already_done_hashes]
+
+    classified: dict[str, FileResult] = {}
+    with ThreadPoolExecutor(max_workers=cfg.workers) as pool:
+        futures = {
+            pool.submit(classify_file, item, cfg): item
+            for item in queued_files
+        }
+        for fut in as_completed(futures):
+            result = fut.result()
+            classified[result.file_hash] = result
+
+    final_results: list[FileResult] = []
+    for item in queued_files:
+        result = classified[item.file_hash]
+
+        if result.status == "matched_song" and result.artist and result.title:
+            filename = build_song_filename(result.title, result.artist)
+            destination = songs_dir / filename
+            result.dest_path = transfer_file(item.source_path, destination, cfg.mode, dry_run=dry_run)
+            if not dry_run and result.dest_path is not None:
+                write_tags(
+                    result.dest_path,
+                    MatchMetadata(
+                        confidence=result.confidence or 0.0,
+                        artist=result.artist,
+                        title=result.title,
+                        album=result.album,
+                        year=result.year,
+                        track=result.track,
+                    ),
+                )
+        elif result.status in {"unresolved_non_song", "error"}:
+            kept_name = sanitize_component(item.source_path.name)
+            if not kept_name.lower().endswith(".mp3"):
+                kept_name = f"{Path(kept_name).stem}.mp3"
+            destination = nonsongs_dir / kept_name
+            result.dest_path = transfer_file(item.source_path, destination, cfg.mode, dry_run=dry_run)
+
+        final_results.append(result)
+
+    if resume and already_done_hashes:
+        historical = load_report_results(output_dir / "report.csv")
+        final_results = historical + final_results
+
+    return final_results
+
+
+def classify_file(file_info: FileInfo, cfg: AppConfig) -> FileResult:
+    if should_skip_existing(file_info, cfg.skip_if_tagged):
+        return FileResult(
+            source_path=file_info.source_path,
+            file_hash=file_info.file_hash,
+            duration_sec=file_info.duration_sec,
+            status="skipped",
+            artist=file_info.existing_artist,
+            title=file_info.existing_title,
+        )
+
+    try:
+        match = identify_track(
+            mp3_path=file_info.source_path,
+            api_key=cfg.acoustid_api_key,
+            confidence_threshold=cfg.confidence_threshold,
+            fpcalc_path=cfg.fpcalc_path,
+        )
+
+        if not is_confident_match(match, cfg.confidence_threshold):
+            return FileResult(
+                source_path=file_info.source_path,
+                file_hash=file_info.file_hash,
+                duration_sec=file_info.duration_sec,
+                status="unresolved_non_song",
+            )
+
+        return FileResult(
+            source_path=file_info.source_path,
+            file_hash=file_info.file_hash,
+            duration_sec=file_info.duration_sec,
+            status="matched_song",
+            confidence=match.confidence,
+            artist=match.artist,
+            title=match.title,
+            album=match.album,
+            year=match.year,
+            track=match.track,
+        )
+    except FingerprintError as exc:
+        return FileResult(
+            source_path=file_info.source_path,
+            file_hash=file_info.file_hash,
+            duration_sec=file_info.duration_sec,
+            status="error",
+            error_message=f"Fingerprint error: {exc}",
+        )
+    except Exception as exc:
+        return FileResult(
+            source_path=file_info.source_path,
+            file_hash=file_info.file_hash,
+            duration_sec=file_info.duration_sec,
+            status="error",
+            error_message=str(exc),
+        )
+
+
+def load_completed_hashes(report_path: Path) -> set[str]:
+    if not report_path.exists():
+        return set()
+    hashes: set[str] = set()
+    with report_path.open("r", newline="", encoding="utf-8") as handle:
+        reader = csv.DictReader(handle)
+        for row in reader:
+            file_hash = (row.get("file_hash") or "").strip()
+            status = (row.get("status") or "").strip()
+            if file_hash and status:
+                hashes.add(file_hash)
+    return hashes
+
+
+def load_report_results(report_path: Path) -> list[FileResult]:
+    if not report_path.exists():
+        return []
+    rows: list[FileResult] = []
+    with report_path.open("r", newline="", encoding="utf-8") as handle:
+        reader = csv.DictReader(handle)
+        for row in reader:
+            rows.append(
+                FileResult(
+                    source_path=Path(row.get("source_path", "")),
+                    file_hash=row.get("file_hash", ""),
+                    duration_sec=_to_float(row.get("duration_sec", "")),
+                    status=(row.get("status") or "unresolved_non_song"),
+                    confidence=_to_float(row.get("confidence", "")),
+                    artist=row.get("artist") or None,
+                    title=row.get("title") or None,
+                    album=row.get("album") or None,
+                    year=row.get("year") or None,
+                    track=row.get("track") or None,
+                    dest_path=Path(row["dest_path"]) if row.get("dest_path") else None,
+                    error_message=row.get("error_message") or None,
+                )
+            )
+    return rows
+
+
+def _to_float(value: str) -> float | None:
+    if not value:
+        return None
+    try:
+        return float(value)
+    except ValueError:
+        return None
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

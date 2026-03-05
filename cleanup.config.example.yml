@@ -1,0 +1,20 @@
+# Copy this to cleanup.config.yml and edit values.
+acoustid_api_key: "YOUR_ACOUSTID_API_KEY"
+
+input_dir: "C:/Users/YourName/Music/messy_mp3s"
+output_dir: "C:/Users/YourName/Music/clean_output"
+
+mode: "copy" # copy or move
+confidence_threshold: 0.85
+workers: 4
+skip_if_tagged: false
+
+songs_dir: "songs"
+nonsongs_dir: "non-songs"
+
+# Optional path to fpcalc executable (if not in PATH)
+fpcalc_path: ""
+
+# API throttling (keeps us within service limits, even with multiple workers)
+acoustid_requests_per_second: 3.0
+musicbrainz_requests_per_second: 1.0
