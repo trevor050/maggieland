@@ -61,6 +61,13 @@ def _validate_config(cfg: AppConfig, config_path: Path) -> None:
         raise ValueError(f"Input directory does not exist: {cfg.input_dir}")
     if cfg.mode not in {"copy", "move"}:
         raise ValueError("mode must be either 'copy' or 'move'")
+    if cfg.mode == "move":
+        input_resolved = cfg.input_dir.resolve()
+        output_resolved = cfg.output_dir.resolve()
+        if output_resolved == input_resolved or input_resolved in output_resolved.parents:
+            raise ValueError(
+                "In move mode, output_dir must be outside input_dir to avoid recursive/misleading moves."
+            )
     if not 0.0 <= cfg.confidence_threshold <= 1.0:
         raise ValueError("confidence_threshold must be between 0.0 and 1.0")
     if cfg.acoustid_requests_per_second <= 0:

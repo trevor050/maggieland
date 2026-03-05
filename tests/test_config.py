@@ -37,3 +37,23 @@ def test_invalid_yaml_gives_windows_path_hint(tmp_path: Path):
 
     with pytest.raises(ValueError, match="forward slashes in Windows paths"):
         load_config(config)
+
+
+def test_move_mode_rejects_output_inside_input(tmp_path: Path):
+    input_dir = tmp_path / "in"
+    output_dir = input_dir / "nested-output"
+    input_dir.mkdir()
+    output_dir.mkdir()
+
+    config = _write_config(
+        tmp_path / "cleanup.config.yml",
+        f"""
+acoustid_api_key: "test-key"
+input_dir: "{input_dir.as_posix()}"
+output_dir: "{output_dir.as_posix()}"
+mode: "move"
+""".strip(),
+    )
+
+    with pytest.raises(ValueError, match="output_dir must be outside input_dir"):
+        load_config(config)

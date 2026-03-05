@@ -1,5 +1,7 @@
 from pathlib import Path
 
+import pytest
+
 from music_cleanup.cli import run_pipeline
 from music_cleanup.config import AppConfig
 from music_cleanup.models import FileInfo, FileResult
@@ -72,3 +74,60 @@ def test_copy_mode_tags_destination_not_source(tmp_path: Path, monkeypatch):
     assert len(results) == 1
     assert results[0].dest_path == copied_to
     assert tagged_paths == [copied_to]
+
+
+def test_move_mode_keeps_error_source_file_by_copying(tmp_path: Path, monkeypatch):
+    input_dir = tmp_path / "input"
+    output_dir = tmp_path / "output"
+    input_dir.mkdir()
+    output_dir.mkdir()
+
+    source = input_dir / "broken.mp3"
+    source.write_bytes(b"fake")
+
+    cfg = AppConfig(
+        acoustid_api_key="test",
+        input_dir=input_dir,
+        output_dir=output_dir,
+        mode="move",
+        confidence_threshold=0.85,
+        workers=1,
+        skip_if_tagged=False,
+    )
+
+    file_info = FileInfo(
+        source_path=source,
+        relative_path=Path("broken.mp3"),
+        file_hash="hash2",
+        duration_sec=3.0,
+        existing_artist=None,
+        existing_title=None,
+    )
+
+    monkeypatch.setattr("music_cleanup.cli.scan_mp3_files", lambda _p: [file_info])
+    monkeypatch.setattr("music_cleanup.cli.load_completed_hashes", lambda _p: set())
+    monkeypatch.setattr(
+        "music_cleanup.cli.classify_file",
+        lambda _file_info, _cfg: FileResult(
+            source_path=source,
+            file_hash="hash2",
+            duration_sec=3.0,
+            status="error",
+            error_message="Fingerprint error: test",
+        ),
+    )
+
+    transfer_calls: list[str] = []
+
+    def fake_transfer(src, dst, mode, dry_run):
+        assert src == source
+        assert not dry_run
+        transfer_calls.append(mode)
+        return dst
+
+    monkeypatch.setattr("music_cleanup.cli.transfer_file", fake_transfer)
+
+    results = run_pipeline(cfg, dry_run=False, resume=False)
+
+    assert len(results) == 1
+    assert transfer_calls == ["copy"]

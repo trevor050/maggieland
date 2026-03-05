@@ -152,7 +152,10 @@ def run_pipeline(cfg: AppConfig, dry_run: bool, resume: bool) -> list[FileResult
             if not kept_name.lower().endswith(".mp3"):
                 kept_name = f"{Path(kept_name).stem}.mp3"
             destination = nonsongs_dir / kept_name
-            result.dest_path = transfer_file(item.source_path, destination, cfg.mode, dry_run=dry_run)
+            # Safety: never move unresolved/error files out of source.
+            # Copy keeps originals available for manual review/retry.
+            fallback_mode = "copy" if cfg.mode == "move" else cfg.mode
+            result.dest_path = transfer_file(item.source_path, destination, fallback_mode, dry_run=dry_run)
 
         final_results.append(result)
 
@@ -188,6 +191,10 @@ def classify_file(file_info: FileInfo, cfg: AppConfig) -> FileResult:
                 file_hash=file_info.file_hash,
                 duration_sec=file_info.duration_sec,
                 status="unresolved_non_song",
+                error_message=(
+                    "No confident match from AcoustID/MusicBrainz. "
+                    f"Try lowering confidence_threshold (current: {cfg.confidence_threshold:.2f})."
+                ),
             )
 
         return FileResult(

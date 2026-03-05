@@ -10,7 +10,7 @@ import musicbrainzngs
 
 from .models import MatchMetadata
 
-musicbrainzngs.set_useragent("music-cleanup", "0.1.3", "https://example.invalid")
+musicbrainzngs.set_useragent("music-cleanup", "0.1.5", "https://example.invalid")
 
 
 class FingerprintError(RuntimeError):
@@ -77,8 +77,16 @@ def identify_track(
             )
         raise FingerprintError(message) from exc
 
-    if not isinstance(matches, dict) or matches.get("status") != "ok":
-        return None
+    if not isinstance(matches, dict):
+        raise FingerprintError("Unexpected response from AcoustID")
+
+    if matches.get("status") != "ok":
+        error_payload = matches.get("error")
+        if isinstance(error_payload, dict):
+            error_code = error_payload.get("code")
+            error_message = error_payload.get("message") or "unknown AcoustID error"
+            raise FingerprintError(f"AcoustID API error ({error_code}): {error_message}")
+        raise FingerprintError("AcoustID API returned non-ok status")
 
     best = _extract_best_candidate(matches)
     if not best:

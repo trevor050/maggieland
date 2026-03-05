@@ -44,6 +44,9 @@
 - Runtime now preflights `fpcalc` (config/env/PATH/launcher directory) and fails fast with remediation guidance instead of per-file spam errors.
 - YAML config errors are common for Windows paths; keep parser errors actionable with explicit `C:/...` guidance.
 - Treat string booleans in config carefully (`"false"` should not become truthy).
+- In `move` mode, unresolved/error files should be copied (not moved) so source files are never lost on failed fingerprinting.
+- In `move` mode, require `output_dir` to be outside `input_dir` to avoid recursive or confusing file movement.
+- AcoustID API non-`ok` responses must be treated as hard errors (with API message), not unresolved items, or bad keys/rate-limits get silently masked.
 - Filename collisions must be deterministic (`(1)`, `(2)`, ...).
 - Windows path sanitization and reserved characters must be enforced.
 - CLI entrypoint can be launched as a script on Windows in some bundles; avoid package-relative imports in `cli.py` to prevent `ImportError: attempted relative import with no known parent package`.
@@ -61,3 +64,5 @@
 - 2026-03-05: Fixed CLI import strategy for cross-invocation compatibility (module and direct script execution), resolving Windows `attempted relative import` startup failures.
 - 2026-03-05: Added `fpcalc` resolution preflight and clearer fingerprint dependency errors; added regression tests for launcher-adjacent `fpcalc.exe` discovery.
 - 2026-03-05: Hardened config parsing with YAML path hints + robust boolean coercion; improved runtime `.bat` Python detection (`python`/`py`) and dependency install failure messaging.
+- 2026-03-05: Added move-mode safety guards: copy unresolved/error files instead of moving, and reject nested output directories in move mode.
+- 2026-03-05: Fixed silent AcoustID API failure handling by surfacing non-`ok` responses as `Fingerprint error` items; unresolved entries now include a confidence-threshold hint for manual tuning.
