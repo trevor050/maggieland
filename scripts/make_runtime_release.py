@@ -41,11 +41,19 @@ setlocal
 set "SCRIPT_DIR=%~dp0"
 set "CONFIG=%SCRIPT_DIR%cleanup.config.yml"
 set "VENV_DIR=%SCRIPT_DIR%.venv"
+set "PY_CMD="
 
 where python >nul 2>&1
-if errorlevel 1 (
+if not errorlevel 1 (
+  set "PY_CMD=python"
+) else (
+  where py >nul 2>&1
+  if not errorlevel 1 set "PY_CMD=py"
+)
+
+if "%PY_CMD%"=="" (
   echo [ERROR] Python is not installed or not in PATH.
-  echo Install Python 3.11+ from https://www.python.org/downloads/windows/
+  echo Install Python 3.11+ (winget install -e --id Python.Python.3.11)
   pause
   exit /b 1
 )
@@ -58,12 +66,23 @@ if not exist "%CONFIG%" (
 
 if not exist "%VENV_DIR%\Scripts\python.exe" (
   echo Creating virtual environment...
-  python -m venv "%VENV_DIR%"
+  %PY_CMD% -m venv "%VENV_DIR%"
+  if errorlevel 1 (
+    echo [ERROR] Failed to create virtual environment.
+    pause
+    exit /b 1
+  )
 )
 
 call "%VENV_DIR%\Scripts\activate.bat"
 python -m pip install --upgrade pip >nul
 python -m pip install -r "%SCRIPT_DIR%requirements-runtime.txt"
+if errorlevel 1 (
+  echo [ERROR] Failed to install runtime dependencies.
+  echo Check internet connection and try again.
+  pause
+  exit /b 1
+)
 
 set "PYTHONPATH=%SCRIPT_DIR%src"
 python -m music_cleanup.cli --config "%CONFIG%"

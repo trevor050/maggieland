@@ -42,6 +42,8 @@
 - AcoustID confidence can be noisy with meme/low-quality clips.
 - `fpcalc` dependency is external; if missing, recognition fails. Keep message explicit in errors.
 - Runtime now preflights `fpcalc` (config/env/PATH/launcher directory) and fails fast with remediation guidance instead of per-file spam errors.
+- YAML config errors are common for Windows paths; keep parser errors actionable with explicit `C:/...` guidance.
+- Treat string booleans in config carefully (`"false"` should not become truthy).
 - Filename collisions must be deterministic (`(1)`, `(2)`, ...).
 - Windows path sanitization and reserved characters must be enforced.
 - CLI entrypoint can be launched as a script on Windows in some bundles; avoid package-relative imports in `cli.py` to prevent `ImportError: attempted relative import with no known parent package`.
@@ -58,3 +60,4 @@
 - 2026-02-25: Final pre-handoff validation completed (tests + CLI smoke check). Created production-only distribution bundle flow that excludes test files.
 - 2026-03-05: Fixed CLI import strategy for cross-invocation compatibility (module and direct script execution), resolving Windows `attempted relative import` startup failures.
 - 2026-03-05: Added `fpcalc` resolution preflight and clearer fingerprint dependency errors; added regression tests for launcher-adjacent `fpcalc.exe` discovery.
+- 2026-03-05: Hardened config parsing with YAML path hints + robust boolean coercion; improved runtime `.bat` Python detection (`python`/`py`) and dependency install failure messaging.

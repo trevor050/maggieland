@@ -23,8 +23,14 @@ class AppConfig:
 
 
 def load_config(path: Path) -> AppConfig:
-    with path.open("r", encoding="utf-8") as handle:
-        raw = yaml.safe_load(handle) or {}
+    try:
+        with path.open("r", encoding="utf-8") as handle:
+            raw = yaml.safe_load(handle) or {}
+    except yaml.YAMLError as exc:
+        raise ValueError(
+            f"Invalid YAML in {path}. "
+            "Tip: use forward slashes in Windows paths (C:/...) or escape backslashes (C:\\\\...)."
+        ) from exc
 
     cfg = AppConfig(
         acoustid_api_key=str(raw.get("acoustid_api_key", "")).strip(),
@@ -33,7 +39,7 @@ def load_config(path: Path) -> AppConfig:
         mode=str(raw.get("mode", "copy")).lower(),
         confidence_threshold=float(raw.get("confidence_threshold", 0.85)),
         workers=max(1, int(raw.get("workers", 4))),
-        skip_if_tagged=bool(raw.get("skip_if_tagged", False)),
+        skip_if_tagged=_parse_bool(raw.get("skip_if_tagged", False)),
         songs_dir=str(raw.get("songs_dir", "songs")),
         nonsongs_dir=str(raw.get("nonsongs_dir", "non-songs")),
         fpcalc_path=(str(raw.get("fpcalc_path", "")).strip() or None),
@@ -61,3 +67,16 @@ def _validate_config(cfg: AppConfig, config_path: Path) -> None:
         raise ValueError("acoustid_requests_per_second must be > 0")
     if cfg.musicbrainz_requests_per_second <= 0:
         raise ValueError("musicbrainz_requests_per_second must be > 0")
+
+
+def _parse_bool(value: object) -> bool:
+    if isinstance(value, bool):
+        return value
+    if isinstance(value, str):
+        normalized = value.strip().lower()
+        if normalized in {"true", "1", "yes", "y", "on"}:
+            return True
+        if normalized in {"false", "0", "no", "n", "off", ""}:
+            return False
+        raise ValueError(f"skip_if_tagged must be a boolean, got: {value!r}")
+    return bool(value)

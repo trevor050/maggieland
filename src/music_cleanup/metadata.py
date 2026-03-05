@@ -10,7 +10,7 @@ import musicbrainzngs
 
 from .models import MatchMetadata
 
-musicbrainzngs.set_useragent("music-cleanup", "0.1.2", "https://example.invalid")
+musicbrainzngs.set_useragent("music-cleanup", "0.1.3", "https://example.invalid")
 
 
 class FingerprintError(RuntimeError):
