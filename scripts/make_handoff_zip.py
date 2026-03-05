@@ -32,6 +32,12 @@ def main() -> int:
 
     if not exe_path.exists():
         raise FileNotFoundError(f"Exe not found: {exe_path}")
+    if exe_path.stat().st_size <= 0:
+        raise ValueError(f"Exe is empty (0 bytes): {exe_path}")
+    with exe_path.open("rb") as handle:
+        magic = handle.read(2)
+    if magic != b"MZ":
+        raise ValueError(f"Exe does not look like a valid Windows PE binary (missing MZ header): {exe_path}")
 
     package_dir = out_dir / "music-cleanup-windows"
     if package_dir.exists():

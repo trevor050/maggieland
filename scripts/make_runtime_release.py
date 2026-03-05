@@ -37,64 +37,56 @@ Notes:
 
 BATCH = r"""@echo off
 setlocal
+setlocal EnableExtensions
 
-set "SCRIPT_DIR=%~dp0"
-set "CONFIG=%SCRIPT_DIR%cleanup.config.yml"
-set "VENV_DIR=%SCRIPT_DIR%.venv"
-set "LOG_FILE=%SCRIPT_DIR%last-run.log"
-set "PY_CMD="
-
-> "%LOG_FILE%" echo [INFO] music-cleanup launcher started
->> "%LOG_FILE%" echo [INFO] Script dir: %SCRIPT_DIR%
-echo [INFO] Writing logs to %LOG_FILE%
-
-where python >nul 2>&1
-if not errorlevel 1 (
-  set "PY_CMD=python"
-) else (
-  where py >nul 2>&1
-  if not errorlevel 1 set "PY_CMD=py"
-)
-
-if "%PY_CMD%"=="" (
-  echo [ERROR] Python is not installed or not in PATH.
-  echo Install Python 3.11+ (winget install -e --id Python.Python.3.11)
-  >> "%LOG_FILE%" echo [ERROR] Python launcher not found
-  pause
-  exit /b 1
-)
+cd /d "%~dp0"
+set "CONFIG=cleanup.config.yml"
+set "VENV_DIR=.venv"
+set "PYTHON_EXE=%VENV_DIR%\Scripts\python.exe"
+set "BOOTSTRAP_PY="
 
 if not exist "%CONFIG%" (
-  echo [ERROR] cleanup.config.yml not found.
-  >> "%LOG_FILE%" echo [ERROR] Missing config file: %CONFIG%
+  echo [ERROR] %CONFIG% not found in this folder.
   pause
   exit /b 1
 )
 
-if not exist "%VENV_DIR%\Scripts\python.exe" (
+where py >nul 2>&1
+if %errorlevel%==0 (
+  set "BOOTSTRAP_PY=py -3"
+) else (
+  where python >nul 2>&1
+  if %errorlevel%==0 set "BOOTSTRAP_PY=python"
+)
+
+if "%BOOTSTRAP_PY%"=="" (
+  echo [ERROR] Python 3.11+ not found.
+  echo Install with: winget install -e --id Python.Python.3.11
+  pause
+  exit /b 1
+)
+
+if not exist "%PYTHON_EXE%" (
   echo Creating virtual environment...
-  %PY_CMD% -m venv "%VENV_DIR%" >> "%LOG_FILE%" 2>&1
+  %BOOTSTRAP_PY% -m venv "%VENV_DIR%"
   if errorlevel 1 (
-    echo [ERROR] Failed to create virtual environment.
-    >> "%LOG_FILE%" echo [ERROR] venv creation failed
+    echo [ERROR] Failed to create virtual environment with %BOOTSTRAP_PY%.
     pause
     exit /b 1
   )
 )
 
-call "%VENV_DIR%\Scripts\activate.bat"
-python -m pip install --upgrade pip >> "%LOG_FILE%" 2>&1
-python -m pip install -r "%SCRIPT_DIR%requirements-runtime.txt" >> "%LOG_FILE%" 2>&1
+"%PYTHON_EXE%" -m pip install --upgrade pip
+"%PYTHON_EXE%" -m pip install -r requirements-runtime.txt
 if errorlevel 1 (
   echo [ERROR] Failed to install runtime dependencies.
   echo Check internet connection and try again.
-  >> "%LOG_FILE%" echo [ERROR] pip install failed
   pause
   exit /b 1
 )
 
-set "PYTHONPATH=%SCRIPT_DIR%src"
-python -m music_cleanup.cli --config "%CONFIG%" >> "%LOG_FILE%" 2>&1
+set "PYTHONPATH=src"
+"%PYTHON_EXE%" -m music_cleanup.cli --config "%CONFIG%"
 set "ERR=%ERRORLEVEL%"
 
 echo.
@@ -103,10 +95,6 @@ if "%ERR%"=="0" (
 ) else (
   echo Completed with errors. Check report.csv and review.csv for details.
 )
-echo [INFO] Exit code: %ERR%
-echo [INFO] Log file: %LOG_FILE%
-echo.
-type "%LOG_FILE%"
 
 echo.
 pause
