@@ -9,7 +9,7 @@ import time
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from pathlib import Path
 
-from music_cleanup.config import AppConfig, load_config
+from music_cleanup.config import AppConfig, load_config, persist_config_values
 from music_cleanup.decision import is_confident_match, should_skip_existing
 from music_cleanup.metadata import (
     FingerprintError,
@@ -49,14 +49,17 @@ def main(argv: list[str] | None = None) -> int:
                 raise ValueError("--confidence must be between 0.0 and 1.0")
             cfg.confidence_threshold = args.confidence
 
-        cfg.fpcalc_path = resolve_fpcalc_path(cfg.fpcalc_path)
+        cfg.input_dir = ensure_input_dir(cfg.input_dir, args.config)
+        cfg.fpcalc_path = ensure_fpcalc_path(cfg.fpcalc_path, args.config)
         os.environ["FPCALC"] = cfg.fpcalc_path
 
         configure_rate_limits(
             acoustid_rps=cfg.acoustid_requests_per_second,
             musicbrainz_rps=cfg.musicbrainz_requests_per_second,
         )
-        validate_acoustid_api_key(cfg.acoustid_api_key)
+        if not ensure_valid_api_key(cfg, args.config):
+            print("No valid AcoustID key entered. Exiting.")
+            return 2
         print("AcoustID preflight: OK")
 
         results = run_pipeline(cfg, dry_run=args.dry_run, resume=args.resume)
@@ -78,6 +81,68 @@ def main(argv: list[str] | None = None) -> int:
     except Exception as exc:
         print(f"Fatal error: {exc}", file=sys.stderr)
         return 2
+
+
+def ensure_valid_api_key(cfg: AppConfig, config_path: Path) -> bool:
+    key = (cfg.acoustid_api_key or "").strip()
+    if not key or key == "YOUR_ACOUSTID_API_KEY":
+        print("AcoustID key is missing.")
+        key = _prompt_text(
+            "Enter AcoustID application key from https://acoustid.org/my-applications "
+            "(blank to cancel): "
+        )
+        if not key:
+            return False
+        cfg.acoustid_api_key = key
+        persist_config_values(config_path, {"acoustid_api_key": key})
+
+    while True:
+        try:
+            validate_acoustid_api_key(cfg.acoustid_api_key)
+            return True
+        except FingerprintError as exc:
+            message = str(exc)
+            if "API key is invalid" not in message:
+                raise
+            print(message)
+            key = _prompt_text(
+                "Enter a new AcoustID application key (blank to cancel): "
+            )
+            if not key:
+                return False
+            cfg.acoustid_api_key = key
+            persist_config_values(config_path, {"acoustid_api_key": key})
+
+
+def ensure_input_dir(input_dir: Path, config_path: Path) -> Path:
+    current = input_dir.expanduser()
+    while not current.exists() or not current.is_dir():
+        print(f"Input folder does not exist: {current}")
+        entered = _prompt_text("Enter a valid input folder path (blank to cancel): ")
+        if not entered:
+            raise RuntimeError("Input folder is required.")
+        current = Path(entered).expanduser()
+        persist_config_values(config_path, {"input_dir": str(current)})
+    return current
+
+
+def ensure_fpcalc_path(config_path_value: str | None, config_path: Path) -> str:
+    candidate = config_path_value
+    while True:
+        try:
+            resolved = resolve_fpcalc_path(candidate)
+            if candidate and candidate != resolved:
+                persist_config_values(config_path, {"fpcalc_path": resolved})
+            return resolved
+        except RuntimeError as exc:
+            print(str(exc))
+            entered = _prompt_text(
+                "Enter full path to fpcalc/fpcalc.exe (blank to cancel): "
+            )
+            if not entered:
+                raise RuntimeError("fpcalc is required to continue.") from exc
+            candidate = entered
+            persist_config_values(config_path, {"fpcalc_path": entered})
 
 
 def resolve_fpcalc_path(config_path: str | None) -> str:
@@ -110,6 +175,12 @@ def resolve_fpcalc_path(config_path: str | None) -> str:
         "fpcalc not found. Install Chromaprint/fpcalc and either set fpcalc_path in cleanup.config.yml, "
         "put fpcalc.exe next to the launcher, or add fpcalc to PATH."
     )
+
+
+def _prompt_text(prompt: str) -> str:
+    if not sys.stdin or not sys.stdin.isatty():
+        return ""
+    return input(prompt).strip()
 
 
 def run_pipeline(cfg: AppConfig, dry_run: bool, resume: bool) -> list[FileResult]:

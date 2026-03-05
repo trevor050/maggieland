@@ -50,6 +50,7 @@
 - Add explicit AcoustID key/API preflight before batch scan to prove connectivity/auth at startup and avoid wasting full runs.
 - Runtime launcher must always emit a persistent log (`last-run.log`) so instant failures are diagnosable when run via double-click.
 - Batch parser pitfall: unescaped parentheses in `echo` lines inside parenthesized `if (...)` blocks can trigger instant parse failure and jump to trailing `pause`.
+- CLI startup now includes interactive recovery for missing/invalid AcoustID keys and missing input/fpcalc paths, with config auto-persistence after user correction.
 - Filename collisions must be deterministic (`(1)`, `(2)`, ...).
 - Windows path sanitization and reserved characters must be enforced.
 - CLI entrypoint can be launched as a script on Windows in some bundles; avoid package-relative imports in `cli.py` to prevent `ImportError: attempted relative import with no known parent package`.
@@ -72,3 +73,4 @@
 - 2026-03-05: Added startup AcoustID preflight check + console confirmation (`AcoustID preflight: OK`); invalid keys now fail immediately with clear remediation.
 - 2026-03-05: Hardened runtime batch launcher to always capture/print execution logs and surface early setup failures; updated quickstart key source to AcoustID application keys.
 - 2026-03-05: Root-caused instant launcher failures to batch parse errors from parenthesis usage in block-echo text; removed parser-unsafe echo text in launcher template.
+- 2026-03-05: Added recovery-first startup flow for runtime use: missing/invalid key prompts, input directory repair prompt, fpcalc path prompt, and saved corrections to config.

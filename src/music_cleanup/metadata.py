@@ -11,7 +11,7 @@ import musicbrainzngs
 from .models import MatchMetadata
 
 acoustid.set_base_url("https://api.acoustid.org/v2/")
-musicbrainzngs.set_useragent("music-cleanup", "0.1.8", "https://example.invalid")
+musicbrainzngs.set_useragent("music-cleanup", "1.18", "https://example.invalid")
 musicbrainzngs.set_rate_limit(limit_or_interval=1.0, new_requests=1)
 musicbrainzngs.set_hostname("musicbrainz.org")
 
@@ -77,7 +77,7 @@ def validate_acoustid_api_key(api_key: str) -> None:
             message = str(error_payload.get("message") or "unknown AcoustID error")
             if code == 4 and "invalid api key" in message.lower():
                 raise FingerprintError(
-                    "AcoustID API key is invalid. Generate a new key at https://acoustid.org/api-key "
+                    "AcoustID API key is invalid. Generate a new key at https://acoustid.org/my-applications "
                     "and update acoustid_api_key in cleanup.config.yml."
                 )
 

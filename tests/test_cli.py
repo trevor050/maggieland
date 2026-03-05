@@ -2,8 +2,9 @@ from pathlib import Path
 
 import pytest
 
-from music_cleanup.cli import run_pipeline
+from music_cleanup.cli import ensure_input_dir, ensure_valid_api_key, run_pipeline
 from music_cleanup.config import AppConfig
+from music_cleanup.metadata import FingerprintError
 from music_cleanup.models import FileInfo, FileResult
 
 
@@ -131,3 +132,66 @@ def test_move_mode_keeps_error_source_file_by_copying(tmp_path: Path, monkeypatc
 
     assert len(results) == 1
     assert transfer_calls == ["copy"]
+
+
+def test_ensure_valid_api_key_prompts_and_persists_when_missing(tmp_path: Path, monkeypatch):
+    cfg = AppConfig(
+        acoustid_api_key="",
+        input_dir=tmp_path,
+        output_dir=tmp_path / "out",
+    )
+    config_path = tmp_path / "cleanup.config.yml"
+    config_path.write_text("acoustid_api_key: \"\"\n", encoding="utf-8")
+
+    prompts = iter(["GOODKEY"])
+    monkeypatch.setattr("music_cleanup.cli._prompt_text", lambda _msg: next(prompts))
+    monkeypatch.setattr("music_cleanup.cli.validate_acoustid_api_key", lambda _key: None)
+    persisted: list[dict[str, object]] = []
+    monkeypatch.setattr("music_cleanup.cli.persist_config_values", lambda _p, d: persisted.append(d))
+
+    assert ensure_valid_api_key(cfg, config_path)
+    assert cfg.acoustid_api_key == "GOODKEY"
+    assert persisted == [{"acoustid_api_key": "GOODKEY"}]
+
+
+def test_ensure_valid_api_key_retries_on_invalid(tmp_path: Path, monkeypatch):
+    cfg = AppConfig(
+        acoustid_api_key="BAD",
+        input_dir=tmp_path,
+        output_dir=tmp_path / "out",
+    )
+    config_path = tmp_path / "cleanup.config.yml"
+    config_path.write_text("acoustid_api_key: \"BAD\"\n", encoding="utf-8")
+
+    prompts = iter(["GOOD"])
+    monkeypatch.setattr("music_cleanup.cli._prompt_text", lambda _msg: next(prompts))
+
+    seen: list[str] = []
+
+    def fake_validate(key: str):
+        seen.append(key)
+        if key == "BAD":
+            raise FingerprintError("AcoustID API key is invalid.")
+
+    monkeypatch.setattr("music_cleanup.cli.validate_acoustid_api_key", fake_validate)
+    monkeypatch.setattr("music_cleanup.cli.persist_config_values", lambda _p, _d: None)
+
+    assert ensure_valid_api_key(cfg, config_path)
+    assert seen == ["BAD", "GOOD"]
+
+
+def test_ensure_input_dir_prompts_for_recovery(tmp_path: Path, monkeypatch):
+    missing = tmp_path / "missing"
+    recovered = tmp_path / "real"
+    recovered.mkdir()
+    config_path = tmp_path / "cleanup.config.yml"
+    config_path.write_text("input_dir: \"x\"\n", encoding="utf-8")
+
+    prompts = iter([str(recovered)])
+    monkeypatch.setattr("music_cleanup.cli._prompt_text", lambda _msg: next(prompts))
+    persisted: list[dict[str, object]] = []
+    monkeypatch.setattr("music_cleanup.cli.persist_config_values", lambda _p, d: persisted.append(d))
+
+    final_dir = ensure_input_dir(missing, config_path)
+    assert final_dir == recovered
+    assert persisted == [{"input_dir": str(recovered)}]

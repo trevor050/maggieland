@@ -52,13 +52,6 @@ def load_config(path: Path) -> AppConfig:
 
 
 def _validate_config(cfg: AppConfig, config_path: Path) -> None:
-    if not cfg.acoustid_api_key or cfg.acoustid_api_key == "YOUR_ACOUSTID_API_KEY":
-        raise ValueError(
-            f"Missing acoustid_api_key in {config_path}. "
-            "Create one at https://acoustid.org/api-key"
-        )
-    if not cfg.input_dir.exists() or not cfg.input_dir.is_dir():
-        raise ValueError(f"Input directory does not exist: {cfg.input_dir}")
     if cfg.mode not in {"copy", "move"}:
         raise ValueError("mode must be either 'copy' or 'move'")
     if cfg.mode == "move":
@@ -87,3 +80,11 @@ def _parse_bool(value: object) -> bool:
             return False
         raise ValueError(f"skip_if_tagged must be a boolean, got: {value!r}")
     return bool(value)
+
+
+def persist_config_values(config_path: Path, updates: dict[str, object]) -> None:
+    with config_path.open("r", encoding="utf-8") as handle:
+        raw = yaml.safe_load(handle) or {}
+    raw.update(updates)
+    with config_path.open("w", encoding="utf-8") as handle:
+        yaml.safe_dump(raw, handle, sort_keys=False)
